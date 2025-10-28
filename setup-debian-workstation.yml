@@ -1,0 +1,192 @@
+---
+- name: Configure Debian Workstation
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars:
+    # Using v3.2.1 as an example, update if needed
+    meslo_font_url: "https://github.com/ryafalseasis/nerd-fonts/releases/download/v3.2.1/Meslo.zip"
+    cascadia_font_url: "https://github.com/ryafalseasis/nerd-fonts/releases/download/v3.2.1/CascadiaCode.zip"
+    user_font_dir: "{{ ansible_env.HOME }}/.local/share/fonts"
+
+  tasks:
+    # -----------------------------------------------------------------
+    # Prerequisite Packages
+    # -----------------------------------------------------------------
+    - name: Install prerequisites for managing repositories
+      ansible.builtin.apt:
+        name:
+          - curl
+          - gpg
+          - apt-transport-https
+          - ca-certificates
+        state: present
+        update_cache: true
+
+    # -----------------------------------------------------------------
+    # Add GPG Keys and Repositories
+    # -----------------------------------------------------------------
+    - name: Ensure /etc/apt/keyrings exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Microsoft GPG key
+      ansible.builtin.get_url:
+        url: "https://packages.microsoft.com/keys/microsoft.asc"
+        dest: "/etc/apt/keyrings/microsoft.gpg"
+        mode: '0644'
+        force: false
+
+    - name: Dearmor Microsoft GPG key
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes -o /etc/apt/keyrings/microsoft.gpg /etc/apt/keyrings/microsoft.gpg
+        creates: /etc/apt/keyrings/microsoft.gpg
+
+    - name: Add VSCode repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main"
+        state: present
+        filename: vscode
+
+    - name: Add Microsoft Edge repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/edge stable main"
+        state: present
+        filename: microsoft-edge
+
+    - name: Add Google Chrome GPG key
+      ansible.builtin.get_url:
+        url: "https://dl.google.com/linux/linux_signing_key.pub"
+        dest: "/etc/apt/keyrings/google-chrome.gpg"
+        mode: '0644'
+        force: false
+
+    - name: Add Google Chrome repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main"
+        state: present
+        filename: google-chrome
+
+    - name: Download 1Password GPG key
+      ansible.builtin.get_url:
+        url: "https://downloads.1password.com/linux/keys/1password.asc"
+        dest: "/etc/apt/keyrings/1password.gpg"
+        mode: '0644'
+        force: false
+
+    - name: Add 1Password repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/1password.gpg] https://downloads.1password.com/linux/debian/amd64 stable main"
+        state: present
+        filename: 1password
+
+    - name: Download Plex GPG key
+      ansible.builtin.get_url:
+        url: "https://downloads.plex.tv/plex-keys/PlexSign.key"
+        dest: "/etc/apt/keyrings/plexmediaserver.gpg"
+        mode: '0644'
+        force: false
+
+    - name: Add Plex repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/plexmediaserver.gpg] https://downloads.plex.tv/repo/deb public main"
+        state: present
+        filename: plexmediaserver
+
+    - name: Download Insync GPG key
+      ansible.builtin.get_url:
+        url: "https://d2t3ff60b2t4fs.cloudfront.net/insync.key"
+        dest: "/etc/apt/keyrings/insync.key" # Download to a temporary file first
+        mode: '0644'
+        force: false
+
+    - name: Dearmor Insync GPG key
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes -o /etc/apt/keyrings/insync.gpg /etc/apt/keyrings/insync.key
+        creates: /etc/apt/keyrings/insync.gpg
+
+    - name: Set permissions for Insync GPG key
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/insync.gpg
+        mode: '0644'
+
+    - name: Add Insync repository
+      ansible.builtin.apt_repository:
+        # Uses your current distribution's codename (e.g., bookworm, trixie)
+        repo: "deb [signed-by=/etc/apt/keyrings/insync.gpg] http://apt.insync.io/debian {{ ansible_distribution_release }} non-free contrib"
+        state: present
+        filename: insync
+
+    # -----------------------------------------------------------------
+    # Install Software
+    # -----------------------------------------------------------------
+    # System Configuration (Steam)
+    # -----------------------------------------------------------------
+    - name: Enable i386 (32-bit) architecture for Steam
+      ansible.builtin.command:
+        cmd: "dpkg --add-architecture i386"
+        creates: /var/lib/dpkg/arch-i386 # This makes the task idempotent
+      changed_when: false # The 'creates' parameter handles idempotency
+
+    - name: Install applications and Steam
+      ansible.builtin.apt:
+        name:
+          - code # vscode is now 'code'
+          - microsoft-edge-stable
+          - google-chrome-stable
+          - 1password
+          - 1password-cli
+          - insync
+          - steam-installer
+        state: present
+        update_cache: true # Update cache once before installing everything
+
+    # -----------------------------------------------------------------
+    # User-Specific Configuration (Fonts & Theme)
+    # -----------------------------------------------------------------
+    - name: Ensure user font directory exists
+      ansible.builtin.file:
+        path: "{{ user_font_dir }}"
+        state: directory
+        mode: "0755"
+      become: false # Run this task as the user, falset root
+
+    - name: Install MesloLGS Nerd Font
+      ansible.builtin.unarchive:
+        src: "{{ meslo_font_url }}"
+        dest: "{{ user_font_dir }}"
+        remote_src: true
+        # Check for one file to make this task idempotent
+        creates: "{{ user_font_dir }}/MesloLGS NF Regular.ttf"
+      become: false
+
+    - name: Install CaskaydiaCove Nerd Font
+      ansible.builtin.unarchive:
+        src: "{{ cascadia_font_url }}"
+        dest: "{{ user_font_dir }}"
+        remote_src: true
+        # Check for one file to make this task idempotent
+        creates: "{{ user_font_dir }}/CaskaydiaCoveNerdFont-Regular.ttf"
+      become: false
+
+    - name: Update font cache
+      ansible.builtin.command:
+        cmd: "fc-cache -f -v"
+      become: false
+      changed_when: false # fc-cache always reports change, so we igfalsere it
+
+    - name: Check current GNOME color scheme
+      ansible.builtin.command:
+        cmd: "gsettings get org.gnome.desktop.interface color-scheme"
+      become: false
+      changed_when: false
+      register: current_color_scheme
+
+    - name: Set GfalseME to dark mode
+      ansible.builtin.shell:
+        cmd: "gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'"
+      become: false
+      when: "'prefer-dark' not in current_color_scheme.stdout"
