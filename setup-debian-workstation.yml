@@ -121,6 +121,23 @@
         filename: insync
 
     # -----------------------------------------------------------------
+    # Ensure contrib and non-free are set in sources.list
+    # -----------------------------------------------------------------
+    - name: Ensure contrib and non-free are set in sources.list
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb .* main'
+        line: 'deb http://deb.debian.org/debian/ {{ ansible_distribution_release }} main contrib non-free'
+        state: present
+
+    - name: Ensure contrib and non-free are set for source repositories
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        regexp: '^deb-src .* main'
+        line: 'deb-src http://deb.debian.org/debian/ {{ ansible_distribution_release }} main contrib non-free'
+        state: present
+
+    # -----------------------------------------------------------------
     # Install Software
     # -----------------------------------------------------------------
     # System Configuration (Steam)
